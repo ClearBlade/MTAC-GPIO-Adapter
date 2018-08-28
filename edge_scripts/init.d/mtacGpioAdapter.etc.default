@@ -1,0 +1,13 @@
+ADAPTER_NAME=mtacGpioAdapter
+DAEMON=/usr/bin/$ADAPTER_NAME
+PIDFILE=/var/run/$ADAPTER_NAME.pid
+
+#Variables needed to start the mtsIoAdapter
+DEVICENAME=mtacGpioAdapter
+ACTIVE_KEY=01234567890
+SYSTEM_KEY=b4cbecaf0bbacfe482e0d9b2bed001
+SYSTEM_SECRET=B4CBECAF0BAAA0DAF1CEE996ED61
+PLATFORM_URL=http://localhost:9001
+MESSAGING_URL=localhost:2883
+CONFIG_COLLECTION=f6abf7af0bfcfabcf9ab86c0d1fb01
+LOG_LEVEL=debug

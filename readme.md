@@ -187,7 +187,7 @@ The JSON payloads expected by and returned from the __mtacGpioAdapter__ adapter 
 #### Read MTAC-GPIO data request
 
 The json request should be structured as follows:	
-```json
+```
 {
   “action”: “read”,
   "gpio": {
@@ -214,7 +214,7 @@ The json request should be structured as follows:
 #### Write mts-io data request
 
 The json request should resemble the following:	
-```json
+```
 {
   “action”: “write”,
   "gpio": {
@@ -230,7 +230,7 @@ The json request should resemble the following:
 #### Read mts-io data response
 
 	The json response will resemble the following:
-```json	
+```
 {
   “success”: true|false,
   “error”: “the error message”,
@@ -263,7 +263,7 @@ The json request should resemble the following:
 #### Write mts-io data response
 
 	The json response will resemble the following:
-```json	
+```
 {
   “success”: true|false,
   “error”: “the error message”,

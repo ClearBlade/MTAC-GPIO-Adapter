@@ -79,19 +79,19 @@ var (
 			"input": map[string]interface{}{
 				"StartAddress": 0,
 				"AddressCount": 4,
-				"Data":         []int{0, 0, 0, 0},
+				"Data":         []float64{0, 0, 0, 0},
 			},
 			"output": map[string]interface{}{
 				"StartAddress": 0,
 				"AddressCount": 4,
-				"Data":         []int{0, 0, 0, 0},
+				"Data":         []float64{0, 0, 0, 0},
 			},
 		},
 		"analog": map[string]interface{}{
 			"input": map[string]interface{}{
 				"StartAddress": 0,
 				"AddressCount": 3,
-				"Data":         []int{0, 0, 0},
+				"Data":         []float64{0, 0, 0},
 			},
 		},
 	}
@@ -186,17 +186,19 @@ func main() {
 	//Read the current GPIO values
 	for i := 0; i < 4; i++ {
 		if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", DIGITAL_INPUT_PREFIX, i), nil); err == nil {
-			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)[i] = val.(int)
+			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
 		}
 		if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", DIGITAL_OUTPUT_PREFIX, i), nil); err == nil {
-			currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]int)[i] = val.(int)
+			currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
 		}
 		if i < 3 {
 			if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", ANALOG_INPUT_PREFIX, i), nil); err == nil {
-				currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)[i] = val.(int)
+				currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
 			}
 		}
 	}
+
+	log.Printf("[DEBUG] current values = %#v\n", currentValues)
 
 	// Initialize ClearBlade Client
 	var err error
@@ -414,6 +416,9 @@ func readGpioValues(gpio map[string]interface{}) error {
 	// 				},
 	// 			},
 	// 		}
+
+	log.Printf("[DEBUG] current values = %#v\n", currentValues)
+
 	if gpio["digital"] != nil {
 		if gpio["digital"].(map[string]interface{})["input"] != nil {
 			if gpio["digital"].(map[string]interface{})["input"].(map[string]interface{})["StartAddress"] == nil {
@@ -424,11 +429,13 @@ func readGpioValues(gpio map[string]interface{}) error {
 				return errors.New("AddressCount missing in digital.input")
 			}
 
-			startAddr := gpio["digital"].(map[string]interface{})["input"].(map[string]interface{})["StartAddress"].(int)
-			addrCount := gpio["digital"].(map[string]interface{})["input"].(map[string]interface{})["AddressCount"].(int)
-			data := currentValues["gpio"].(map[string]interface{})["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)
+			startAddr := int(gpio["digital"].(map[string]interface{})["input"].(map[string]interface{})["StartAddress"].(float64))
+			addrCount := int(gpio["digital"].(map[string]interface{})["input"].(map[string]interface{})["AddressCount"].(float64))
+			data := currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)
 
 			gpio["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"] = data[startAddr : startAddr+addrCount]
+
+			log.Printf("[DEBUG] gpio = %#v\n", gpio)
 		}
 
 		if gpio["digital"].(map[string]interface{})["output"] != nil {
@@ -440,11 +447,13 @@ func readGpioValues(gpio map[string]interface{}) error {
 				return errors.New("AddressCount missing in digital.output")
 			}
 
-			startAddr := gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["StartAddress"].(int)
-			addrCount := gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["AddressCount"].(int)
-			data := currentValues["gpio"].(map[string]interface{})["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]int)
+			startAddr := int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["StartAddress"].(float64))
+			addrCount := int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["AddressCount"].(float64))
+			data := currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)
 
 			gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"] = data[startAddr : startAddr+addrCount]
+
+			log.Printf("[DEBUG] gpio = %#v\n", gpio)
 		}
 	}
 
@@ -458,11 +467,13 @@ func readGpioValues(gpio map[string]interface{}) error {
 				return errors.New("AddressCount missing in analog.input")
 			}
 
-			startAddr := gpio["analog"].(map[string]interface{})["input"].(map[string]interface{})["StartAddress"].(int)
-			addrCount := gpio["analog"].(map[string]interface{})["input"].(map[string]interface{})["AddressCount"].(int)
-			data := currentValues["gpio"].(map[string]interface{})["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)
+			startAddr := int(gpio["analog"].(map[string]interface{})["input"].(map[string]interface{})["StartAddress"].(float64))
+			addrCount := int(gpio["analog"].(map[string]interface{})["input"].(map[string]interface{})["AddressCount"].(float64))
+			data := currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)
 
 			gpio["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"] = data[startAddr : startAddr+addrCount]
+
+			log.Printf("[DEBUG] gpio = %#v\n", gpio)
 		}
 	}
 	return nil
@@ -485,9 +496,9 @@ func writeGpioValues(gpio map[string]interface{}) error {
 
 			err := writeValues(MTSIO_WRITE,
 				DIGITAL_INPUT_PREFIX,
-				gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["StartAddress"].(int),
-				gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["AddressCount"].(int),
-				gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]int))
+				int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["StartAddress"].(float64)),
+				int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["AddressCount"].(float64)),
+				gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64))
 
 			if err != nil {
 				return err
@@ -497,10 +508,10 @@ func writeGpioValues(gpio map[string]interface{}) error {
 	return nil
 }
 
-func writeValues(action string, gpioPrefix string, startAddress int, addressCount int, data []int) error {
+func writeValues(action string, gpioPrefix string, startAddress int, addressCount int, data []float64) error {
 	for i := 0; i < addressCount; i++ {
 		if val, err := executeMtsioCommand(action, fmt.Sprintf("%s%d", gpioPrefix, i+startAddress), data[i]); err == nil {
-			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)[i] = val.(int)
+			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
 		} else {
 			return err
 		}
@@ -552,7 +563,7 @@ func executeMtsioCommand(operation string, ioPort string, value interface{}) (in
 
 func convertResponseValue(respVal string) interface{} {
 	if numVal, err := strconv.ParseInt(respVal, 10, 32); err == nil {
-		return int(numVal)
+		return float64(numVal)
 	} else {
 		return respVal
 	}
@@ -688,11 +699,11 @@ func watchFiles() {
 					if ndx, err := strconv.Atoi(event.Name[len(event.Name)-1:]); err == nil {
 						if val, err := executeMtsioCommand(MTSIO_READ, file, nil); err == nil {
 							if strings.Contains(file, DIGITAL_INPUT_PREFIX) {
-								currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)[ndx] = val.(int)
+								currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[ndx] = val.(float64)
 							} else if strings.Contains(event.Name, DIGITAL_OUTPUT_PREFIX) {
-								currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]int)[ndx] = val.(int)
+								currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)[ndx] = val.(float64)
 							} else if strings.Contains(event.Name, ANALOG_INPUT_PREFIX) {
-								currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]int)[ndx] = val.(int)
+								currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[ndx] = val.(float64)
 							}
 						}
 					} else {
@@ -755,6 +766,9 @@ func watchFiles() {
 func publishGpioResponse(respJson map[string]interface{}) {
 	//Create the response topic
 	theTopic := topicRoot + "/"
+
+	log.Printf("[DEBUG] publishGpioResponse - respJson['action'] = %s\n", respJson["action"])
+
 	if respJson["action"].(string) == gpioRead {
 		theTopic += gpioRead
 	} else {

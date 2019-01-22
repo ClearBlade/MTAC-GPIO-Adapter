@@ -204,11 +204,7 @@ The json request should be structured as follows:
       "input": {
         “StartAddress”: 0,
         “AddressCount”: 4
-      },
-      "output": {
-        “StartAddress”: 0,
-        “AddressCount”: 4
-      },
+      }
     },
   }
 }
@@ -223,12 +219,7 @@ The json request should resemble the following:
       “StartAddress”: 0,
       “AddressCount”: 4,
       “Data”: [true, false, false, true]
-    },
-    "analog": {
-      “StartAddress”: 0,
-      “AddressCount”: 4,
-      “Data”: [1, 2, 3, 4]
-    },
+    }
   }
 }
 
@@ -257,14 +248,9 @@ The json request should resemble the following:
     "analog": {
       "input": {
         “StartAddress”: 0,
-        “AddressCount”: 4,
-        “Data”: [1, 2, 3, 4]
-      },
-      "output": {
-        “StartAddress”: 0,
-        “AddressCount”: 4,
-        “Data”: [1, 2, 3, 4]
-      },
+        “AddressCount”: 3,
+        “Data”: [1, 2, 3]
+      }
     },
   }
 }

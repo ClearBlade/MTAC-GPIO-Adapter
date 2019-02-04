@@ -367,7 +367,7 @@ In order to compile the adapter for execution within mLinux, the following steps
  2. Navigate to the _mtsioadapter_ directory  
     * ```cd mtsioadapter```
  3. Compile the adapter
-    * ```GOARCH=arm GOARM=5 CGO_ENABLED=1 GOOS=linux go build```
+    * ```GOARCH=arm GOARM=5 GOOS=linux go build```
 
 
 

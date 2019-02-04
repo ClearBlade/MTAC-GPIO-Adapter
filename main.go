@@ -18,7 +18,7 @@ import (
 
 	cb "github.com/clearblade/Go-SDK"
 	mqttTypes "github.com/clearblade/mqtt_parsing"
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	mqtt "github.com/clearblade/paho.mqtt.golang"
 	"github.com/fsnotify/fsnotify"
 	"github.com/hashicorp/logutils"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"

@@ -13,6 +13,17 @@ mv mtacGpioAdapter.etc.default /etc/default/mtacGpioAdapter
 #Ensure init.d script is executable
 chmod +x /etc/init.d/mtacGpioAdapter
 
+#Add adapter to log rotate
+cat << EOF > /etc/logrotate.d/mtacGpioAdapter.conf
+/var/log/mtacGpioAdapter {
+    size 10M
+    rotate 3
+    compress
+    copytruncate
+    missingok
+}
+EOF
+
 #Remove mtacGpioAdapter from monit in case it was already there
 sed -i '/mtacGpioAdapter.pid/{N;N;N;N;d}' /etc/monitrc
 
@@ -26,5 +37,8 @@ sed -i '/#  check process monit with pidfile/i \
 
 #restart monit
 /etc/init.d/monit restart
+
+#Start the adapter
+monit start mtacGpioAdapter
 
 echo "mtacGpioAdapter Deployed"

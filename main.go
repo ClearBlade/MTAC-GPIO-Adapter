@@ -21,7 +21,6 @@ import (
 	mqtt "github.com/clearblade/paho.mqtt.golang"
 	"github.com/fsnotify/fsnotify"
 	"github.com/hashicorp/logutils"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -146,18 +145,21 @@ func main() {
 	flag.Usage = usage
 	validateFlags()
 
+	//create the log file with the correct permissions
+	logfile, err := os.OpenFile("/var/log/mtacGpioAdapter", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer logfile.Close()
+
 	//Initialize the logging mechanism
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
 	filter := &logutils.LevelFilter{
 		Levels:   []logutils.LogLevel{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"},
 		MinLevel: logutils.LogLevel(strings.ToUpper(logLevel)),
-		Writer: &lumberjack.Logger{
-			Filename:   "/var/log/mtacGpioAdapter",
-			MaxSize:    1, // megabytes
-			MaxBackups: 5,
-			MaxAge:     10, //days
-		},
+		Writer:   logfile,
 	}
 	log.SetOutput(filter)
 
@@ -201,7 +203,6 @@ func main() {
 	log.Printf("[DEBUG] current values = %#v\n", currentValues)
 
 	// Initialize ClearBlade Client
-	var err error
 	if err = initCbClient(cbBroker); err != nil {
 		log.Println(err.Error())
 		log.Println("Unable to initialize CB broker client. Exiting.")

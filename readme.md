@@ -365,9 +365,9 @@ In order to compile the adapter for execution within mLinux, the following steps
  1. Retrieve the adapter source code  
     * ```git clone git@github.com:ClearBlade/Multitech-MTSIO-Adapter.git```
  2. Navigate to the _mtsioadapter_ directory  
-    * ```cd mtsioadapter```
+    * ```cd MTAC-GPIO-ADAPTER```
  3. Compile the adapter
-    * ```GOARCH=arm GOARM=5 GOOS=linux go build```
+    * ```GOARCH=arm GOARM=5 GOOS=linux go build -o mtacGpioAdapter```
 
 
 

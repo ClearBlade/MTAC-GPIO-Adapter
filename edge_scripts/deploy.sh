@@ -28,7 +28,7 @@ EOF
 sed -i '/mtacGpioAdapter.pid/{N;N;N;N;d}' /etc/monitrc
 
 #Add the adapter to monit
-sed -i '/#  check process monit with pidfile/i \
+sed -i '/#  check process apache with pidfile/i \
   check process mtacGpioAdapter with pidfile \/var\/run\/mtacGpioAdapter.pid \
     start program = "\/etc\/init.d\/mtacGpioAdapter start" with timeout 60 seconds \
     stop program  = "\/etc\/init.d\/mtacGpioAdapter stop" \

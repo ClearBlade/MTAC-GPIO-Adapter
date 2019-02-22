@@ -2,7 +2,7 @@
 set -e
 
 ### BEGIN INIT INFO
-# Provides:           mtsIoAdapter
+# Provides:           mtacGpioAdapter
 # Required-Start:     edge
 # Required-Stop:      edge
 # Default-Start:      2 3 4 5
@@ -10,7 +10,7 @@ set -e
 # Short-Description:  ClearBlade Platform Adapter for Multitech mts-io package
 ### END INIT INFO
 
-. /etc/default/mtsIoAdapter
+. /etc/default/mtacGpioAdapter
 . /etc/init.d/functions
 
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -21,12 +21,12 @@ FLAGS="-password=$ACTIVE_KEY -deviceName=$DEVICENAME -systemKey=$SYSTEM_KEY \
 -adapterConfigCollectionID=$CONFIG_COLLECTION -logLevel=$LOG_LEVEL"
 
 start() {
-    echo "Starting mtsIoAdapter..."
-    start-stop-daemon --start --quiet --oknodo --background --pidfile $PIDFILE --make-pidfile --chdir ~ --exec /bin/bash -- -c "exec $DAEMON $FLAGS"
+    echo "Starting mtacGpioAdapter..."
+    start-stop-daemon --start --quiet --oknodo --background --pidfile $PIDFILE --make-pidfile --chdir /home/root --chuid root --startas /bin/bash -- -c "exec $DAEMON $FLAGS > $ADAPTER_LOG 2>&1"
 }
 
 stop() {
-    echo "Stopping mtsIoAdapter..."
+    echo "Stopping mtacGpioAdapter..."
     start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --retry 10
 }
 

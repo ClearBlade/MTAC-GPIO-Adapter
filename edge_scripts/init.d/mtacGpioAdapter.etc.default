@@ -1,7 +1,7 @@
 ADAPTER_NAME=mtacGpioAdapter
 DAEMON=/usr/bin/$ADAPTER_NAME
 PIDFILE=/var/run/$ADAPTER_NAME.pid
-
+ADAPTER_LOG=/var/log/mtacGpioAdapter
 #Variables needed to start the mtsIoAdapter
 DEVICENAME=<YOUR_AUTH_DEVICE_ID>
 ACTIVE_KEY=<YOUR_AUTH_DEVICE_ACTIVE_KEY>

@@ -495,24 +495,31 @@ func writeGpioValues(gpio map[string]interface{}) error {
 				return errors.New("Data array missing in digital.output write request")
 			}
 
+			data := gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]interface{})
+
 			err := writeValues(MTSIO_WRITE,
-				DIGITAL_INPUT_PREFIX,
+				DIGITAL_OUTPUT_PREFIX,
 				int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["StartAddress"].(float64)),
 				int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["AddressCount"].(float64)),
-				gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64))
+				data)
 
 			if err != nil {
 				return err
 			}
+		} else {
+			return errors.New("digital.output object is missing")
 		}
+	} else {
+		return errors.New("digital object is missing")
 	}
 	return nil
 }
 
-func writeValues(action string, gpioPrefix string, startAddress int, addressCount int, data []float64) error {
+func writeValues(action string, gpioPrefix string, startAddress int, addressCount int, data []interface{}) error {
+	log.Println("[DEBUG] writeValues - writing values")
 	for i := 0; i < addressCount; i++ {
-		if val, err := executeMtsioCommand(action, fmt.Sprintf("%s%d", gpioPrefix, i+startAddress), data[i]); err == nil {
-			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
+		if _, err := executeMtsioCommand(action, fmt.Sprintf("%s%d", gpioPrefix, i+startAddress), data[i].(float64)); err == nil {
+			currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)[i+startAddress] = data[i].(float64)
 		} else {
 			return err
 		}
@@ -530,7 +537,8 @@ func createCommandArgs(operation string, portName string, ioPort string, value i
 			case string:
 				cmdArgs = append(cmdArgs, value.(string))
 			case float64:
-				cmdArgs = append(cmdArgs, strconv.FormatFloat(value.(float64), 'E', -1, 64))
+				//cmdArgs = append(cmdArgs, strconv.FormatFloat(value.(float64), 'E', -1, 64))
+				cmdArgs = append(cmdArgs, strconv.Itoa(int(value.(float64))))
 			case bool:
 				if value.(bool) {
 					cmdArgs = append(cmdArgs, strconv.Itoa(MTSIO_ON))

@@ -65,6 +65,7 @@ var (
 	activeKey           string
 	logLevel            string //Defaults to info
 	adapterConfigCollID string
+	gpioDataCollID      string
 
 	topicRoot                 = "wayside/gpio"
 	serialPortName            = ""
@@ -120,6 +121,8 @@ func init() {
 	flag.StringVar(&logLevel, "logLevel", "info", "The level of logging to use. Available levels are 'debug, 'info', 'warn', 'error', 'fatal' (optional)")
 
 	flag.StringVar(&adapterConfigCollID, "adapterConfigCollectionID", "", "The ID of the data collection used to house adapter configuration (required)")
+	flag.StringVar(&gpioDataCollID, "gpioDataCollectionID", "", "Collection ID to store current GPIO values - if provided updates to GPIO values will be made in the collection as well as published via MQTT (optional)")
+
 }
 
 func usage() {
@@ -185,21 +188,6 @@ func main() {
 		panic("Unable to detect MTAC-GPIO on AP1 or AP2")
 	}
 
-	//Read the current GPIO values
-	for i := 0; i < 4; i++ {
-		if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", DIGITAL_INPUT_PREFIX, i), nil); err == nil {
-			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
-		}
-		if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", DIGITAL_OUTPUT_PREFIX, i), nil); err == nil {
-			currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
-		}
-		if i < 3 {
-			if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", ANALOG_INPUT_PREFIX, i), nil); err == nil {
-				currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
-			}
-		}
-	}
-
 	log.Printf("[DEBUG] current values = %#v\n", currentValues)
 
 	// Initialize ClearBlade Client
@@ -207,6 +195,26 @@ func main() {
 		log.Println(err.Error())
 		log.Println("Unable to initialize CB broker client. Exiting.")
 		return
+	}
+
+	initGpioCollection()
+
+	//Read the current GPIO values
+	for i := 0; i < 4; i++ {
+		if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", DIGITAL_INPUT_PREFIX, i), nil); err == nil {
+			currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
+			storeGpioValueInCollection(DIGITAL_INPUT_PREFIX+strconv.Itoa(i), val.(float64))
+		}
+		if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", DIGITAL_OUTPUT_PREFIX, i), nil); err == nil {
+			currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
+			storeGpioValueInCollection(DIGITAL_OUTPUT_PREFIX+strconv.Itoa(i), val.(float64))
+		}
+		if i < 3 {
+			if val, err := executeMtsioCommand(MTSIO_READ, fmt.Sprintf("%s%d", ANALOG_INPUT_PREFIX, i), nil); err == nil {
+				currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[i] = val.(float64)
+				storeGpioValueInCollection(ANALOG_INPUT_PREFIX+strconv.Itoa(i), val.(float64))
+			}
+		}
 	}
 
 	defer close(endSubscribeWorkerChannel)
@@ -709,10 +717,13 @@ func watchFiles() {
 						if val, err := executeMtsioCommand(MTSIO_READ, file, nil); err == nil {
 							if strings.Contains(file, DIGITAL_INPUT_PREFIX) {
 								currentValues["digital"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[ndx] = val.(float64)
+								storeGpioValueInCollection(DIGITAL_INPUT_PREFIX+strconv.Itoa(ndx), val.(float64))
 							} else if strings.Contains(event.Name, DIGITAL_OUTPUT_PREFIX) {
 								currentValues["digital"].(map[string]interface{})["output"].(map[string]interface{})["Data"].([]float64)[ndx] = val.(float64)
+								storeGpioValueInCollection(DIGITAL_OUTPUT_PREFIX+strconv.Itoa(ndx), val.(float64))
 							} else if strings.Contains(event.Name, ANALOG_INPUT_PREFIX) {
 								currentValues["analog"].(map[string]interface{})["input"].(map[string]interface{})["Data"].([]float64)[ndx] = val.(float64)
+								storeGpioValueInCollection(ANALOG_INPUT_PREFIX+strconv.Itoa(ndx), val.(float64))
 							}
 						}
 					} else {
@@ -798,6 +809,42 @@ func publishGpioResponse(respJson map[string]interface{}) {
 		err = publish(theTopic, string(respStr))
 		if err != nil {
 			log.Printf("[ERROR] subscribeWorker - ERROR publishing to topic: %s\n", err.Error())
+		}
+	}
+}
+
+func initGpioCollection() {
+	// to make life easier let's clear out all old rows, each di/do/ai will have it's own row. we are assuming the collection has the needed columns
+	if gpioDataCollID != "" {
+		log.Println("[INFO] initGpioCollection - clearing old data from gpio collection")
+		if err := cbBroker.client.DeleteData(gpioDataCollID, nil); err != nil {
+			log.Printf("[ERROR] initGpioCollection - failed to delete old data from gpio data collection: %s\n", err.Error())
+		}
+		initialData := make([]map[string]interface{}, 0)
+		for i := 0; i < 4; i++ {
+			initialData = append(initialData, map[string]interface{}{"gpio_id": DIGITAL_INPUT_PREFIX + strconv.Itoa(i), "input_value": -1})
+			initialData = append(initialData, map[string]interface{}{"gpio_id": DIGITAL_OUTPUT_PREFIX + strconv.Itoa(i), "input_value": -1})
+			//only have 3 analog inputs on the gpio board
+			if i < 3 {
+				initialData = append(initialData, map[string]interface{}{"gpio_id": ANALOG_INPUT_PREFIX + strconv.Itoa(i), "input_value": -1})
+			}
+		}
+		if err := cbBroker.client.InsertData(gpioDataCollID, initialData); err != nil {
+			log.Printf("[ERROR] initGpioCollection - failed to create gpio data: %s\n", err.Error())
+		}
+	}
+}
+
+func storeGpioValueInCollection(inputName string, inputValue float64) {
+	if gpioDataCollID != "" {
+		log.Println("[INFO] storeGpioValueInCollection - gpio collection ID provided, updating value")
+		query := cb.NewQuery()
+		query.EqualTo("gpio_id", inputName)
+		changes := map[string]interface{}{
+			"input_value": inputValue,
+		}
+		if err := cbBroker.client.UpdateData(gpioDataCollID, query, changes); err != nil {
+			log.Printf("[ERROR] storeGpioValueInCollection - failed to update gpio data: %s\n", err.Error())
 		}
 	}
 }

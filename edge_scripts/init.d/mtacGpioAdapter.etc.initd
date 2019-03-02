@@ -18,7 +18,7 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 FLAGS="-password=$ACTIVE_KEY -deviceName=$DEVICENAME -systemKey=$SYSTEM_KEY \
 -systemSecret=$SYSTEM_SECRET -platformURL=$PLATFORM_URL -messagingURL=$MESSAGING_URL \
--adapterConfigCollectionID=$CONFIG_COLLECTION -logLevel=$LOG_LEVEL"
+-adapterConfigCollectionID=$CONFIG_COLLECTION -gpioDataCollectionID=$GPIO_DATA_COLLECTION -logLevel=$LOG_LEVEL"
 
 start() {
     echo "Starting mtacGpioAdapter..."

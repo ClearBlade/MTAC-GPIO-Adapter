@@ -50,8 +50,8 @@ const (
 	ANALOG_INPUT_PREFIX   = "adc"
 
 	//mtsio boolean values
-	MTSIO_ON  = 1
-	MTSIO_OFF = 0
+	MTSIO_ON  = 0
+	MTSIO_OFF = 1
 
 	GPIO_DIRECTORY = "/sys/devices/platform/mts-io"
 )
@@ -95,6 +95,8 @@ var (
 			},
 		},
 	}
+
+	activeCycles = map[string]chan bool{}
 )
 
 type cbPlatformBroker struct {
@@ -355,6 +357,20 @@ func handleRequest(payload []byte) {
 	// 		}
 	// }
 
+	// or this for a cycle request:
+	// {
+	// 	"action": "cycle_start" / "cycle_end",
+	// 	"on_interval": 5, (only required on cycle_start action)
+	// 	"off_interval": 3, (only required on cycle_start action)
+	// 	"gpio": {
+	// 		"digital": {
+	// 			"output": {
+	// 				"Address": 0
+	// 			}
+	// 		}
+	// 	}
+	// }
+
 	log.Printf("[DEBUG] handleRequest - Json payload received: %s\n", string(payload))
 
 	var jsonPayload map[string]interface{}
@@ -385,6 +401,10 @@ func handleRequest(payload []byte) {
 			err = readGpioValues(jsonPayload["gpio"].(map[string]interface{}))
 		} else if jsonPayload["action"].(string) == MTSIO_WRITE {
 			err = writeGpioValues(jsonPayload["gpio"].(map[string]interface{}))
+		} else if jsonPayload["action"].(string) == "cycle_start" {
+			err = startGpioCycle(jsonPayload["gpio"].(map[string]interface{}), jsonPayload["on_interval"].(float64), jsonPayload["off_interval"].(float64))
+		} else if jsonPayload["action"].(string) == "cycle_end" {
+			err = stopGpioCycle(jsonPayload["gpio"].(map[string]interface{}))
 		}
 
 		log.Printf("[DEBUG] handleRequest - err = %#v\n", err)
@@ -400,6 +420,83 @@ func handleRequest(payload []byte) {
 	}
 
 	publishGpioResponse(jsonPayload)
+}
+
+func startGpioCycle(gpio map[string]interface{}, onInterval, offInterval float64) error {
+
+	var gpioAddress int
+	if gpio["digital"] != nil {
+		if gpio["digital"].(map[string]interface{})["output"] != nil {
+			gpioAddress = int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Address"].(float64))
+		} else {
+			return errors.New("missing gpio.digital.output in cycle request (only gpio type cycle is valid for)")
+		}
+	} else {
+		return errors.New("missing gpio.digital in cycle request")
+	}
+
+	gpioKey := DIGITAL_OUTPUT_PREFIX + strconv.Itoa(gpioAddress)
+
+	// first check if cycle already exists for this address, if so don't start a new one
+	if _, ok := activeCycles[gpioKey]; ok {
+		return errors.New("this digital input is already currently cycling, end current cycle before starting a new one")
+	}
+
+	quit := make(chan bool)
+	activeCycles[gpioKey] = quit
+	go cycleGPIO(gpioKey, quit, onInterval, offInterval)
+	return nil
+}
+
+func cycleGPIO(gpioToCycle string, quit chan bool, onInterval, offInterval float64) {
+	//probably a more elegant solution for this
+	totalInterval := onInterval + offInterval
+	if _, err := executeMtsioCommand(MTSIO_WRITE, gpioToCycle, MTSIO_ON); err != nil {
+		log.Printf("[ERROR] cycleGPIO - failed to turn on GPIO: %s\n", err.Error())
+	}
+	onTicker := time.NewTicker(time.Duration(totalInterval) * time.Second)
+	defer onTicker.Stop()
+	time.Sleep(time.Duration(onInterval) * time.Second)
+	offTicker := time.NewTicker(time.Duration(totalInterval) * time.Second)
+	defer offTicker.Stop()
+	for {
+		select {
+		case <-quit:
+			if _, err := executeMtsioCommand(MTSIO_WRITE, gpioToCycle, MTSIO_OFF); err != nil {
+				log.Printf("[ERROR] cycleGPIO - failed to turn off GPIO: %s\n", err.Error())
+			}
+			return
+		case <-onTicker.C:
+			if _, err := executeMtsioCommand(MTSIO_WRITE, gpioToCycle, MTSIO_OFF); err != nil {
+				log.Printf("[ERROR] cycleGPIO - failed to turn off GPIO: %s\n", err.Error())
+			}
+			break
+		case <-offTicker.C:
+			if _, err := executeMtsioCommand(MTSIO_WRITE, gpioToCycle, MTSIO_ON); err != nil {
+				log.Printf("[ERROR] cycleGPIO - failed to turn on GPIO: %s\n", err.Error())
+			}
+			break
+		}
+	}
+}
+
+func stopGpioCycle(gpio map[string]interface{}) error {
+	var gpioAddress int
+	if gpio["digital"] != nil {
+		if gpio["digital"].(map[string]interface{})["output"] != nil {
+			gpioAddress = int(gpio["digital"].(map[string]interface{})["output"].(map[string]interface{})["Address"].(float64))
+		} else {
+			return errors.New("missing gpio.digital.output in stop cycle request (only gpio type cycle is valid for)")
+		}
+	} else {
+		return errors.New("missing gpio.digital in stop cycle request")
+	}
+	if theChan, ok := activeCycles[DIGITAL_OUTPUT_PREFIX+strconv.Itoa(gpioAddress)]; ok {
+		theChan <- true
+	} else {
+		return errors.New("provided GPIO is not currently cycling")
+	}
+	return nil
 }
 
 func readGpioValues(gpio map[string]interface{}) error {
@@ -553,8 +650,10 @@ func createCommandArgs(operation string, portName string, ioPort string, value i
 				} else {
 					cmdArgs = append(cmdArgs, strconv.Itoa(MTSIO_OFF))
 				}
-
+			case int:
+				cmdArgs = append(cmdArgs, strconv.Itoa(value.(int)))
 			}
+
 		}
 	}
 	return cmdArgs
@@ -712,7 +811,11 @@ func watchFiles() {
 					log.Printf("[DEBUG] watchFiles - modified file: %s\n", event.Name)
 					//Need to get the last part of the file name
 					_, file := filepath.Split(event.Name)
-
+					// if this change is from a digital output that is currently cycling, ignore the change
+					if _, ok := activeCycles[file]; ok {
+						log.Println("[DEBUG] watchFiles - change was caused from an active cycle, not publishing event")
+						break
+					}
 					if ndx, err := strconv.Atoi(event.Name[len(event.Name)-1:]); err == nil {
 						if val, err := executeMtsioCommand(MTSIO_READ, file, nil); err == nil {
 							if strings.Contains(file, DIGITAL_INPUT_PREFIX) {

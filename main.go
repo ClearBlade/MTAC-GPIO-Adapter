@@ -496,6 +496,7 @@ func stopGpioCycle(gpio map[string]interface{}) error {
 	} else {
 		return errors.New("provided GPIO is not currently cycling")
 	}
+	delete(activeCycles, DIGITAL_OUTPUT_PREFIX+strconv.Itoa(gpioAddress))
 	return nil
 }
 

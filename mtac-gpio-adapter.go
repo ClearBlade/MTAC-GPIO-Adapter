@@ -3,20 +3,19 @@ package main
 import (
 	"encoding/json"
 	"flag"
-	cb "github.com/clearblade/Go-SDK"
-	mqttTypes "github.com/clearblade/mqtt_parsing"
-	mqtt "github.com/clearblade/paho.mqtt.golang"
-	"github.com/fsnotify/fsnotify"
-	"github.com/hashicorp/logutils"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	cb "github.com/clearblade/Go-SDK"
+	mqttTypes "github.com/clearblade/mqtt_parsing"
+	mqtt "github.com/clearblade/paho.mqtt.golang"
+	"github.com/hashicorp/logutils"
 )
 
 const (
@@ -48,6 +47,8 @@ var (
 	currentValues       gpioValues
 	readOnlyGPIOIDs     = []string{"adc0", "adc1", "adc2", "din0", "din1", "din2", "din3"}
 	readWriteGPIOIDs    = []string{"dout0", "dout1", "dout2", "dout3", "led1", "led2"}
+
+	topicRoot = "mtac-gpio"
 )
 
 type gpio struct {
@@ -68,6 +69,8 @@ type gpioValues struct {
 
 // no current adapter settings
 type adapterSettings struct {
+	WatchInputs     []string `json:"watchInputs"`
+	PollingInterval int      `json:"pollingInterval"`
 }
 
 type adapterConfig struct {
@@ -97,6 +100,7 @@ func init() {
 	flag.StringVar(&messagingURL, "messagingURL", "localhost:1883", "messaging URL (optional)")
 	flag.StringVar(&logLevel, "logLevel", "info", "The level of logging to use. Available levels are 'debug, 'info', 'warn', 'error', 'fatal' (optional)")
 	flag.StringVar(&adapterConfigCollID, "adapterConfigCollectionID", "", "The ID of the data collection used to house adapter configuration (required)")
+
 }
 
 func usage() {
@@ -122,23 +126,17 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	logfile, err := os.OpenFile("/var/log/mtacGpioAdapter", os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %s", err.Error())
-	}
-	defer logfile.Close()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	filter := &logutils.LevelFilter{
 		Levels:   []logutils.LogLevel{"DEBUG", "INFO", "WARN", "ERROR", "FATAL"},
 		MinLevel: logutils.LogLevel(strings.ToUpper(logLevel)),
-		Writer:   logfile,
+		Writer:   os.Stdout,
 	}
 	log.SetOutput(filter)
 
 	setSerialPortName()
 	initGPIOValues()
 	initClearBlade()
-	initAdapterConfig()
 	connectClearBlade()
 
 	log.Println("[DEBUG] main - starting info log ticker")
@@ -163,33 +161,51 @@ func initClearBlade() {
 		err = cbClient.Authenticate()
 	}
 	log.Println("[INFO] initClearBlade - clearblade successfully initialized")
+
+	setAdapterConfig(cbClient)
+
 }
 
-func initAdapterConfig() {
-	config = adapterConfig{TopicRoot: defaultTopicRoot}
-	log.Println("[DEBUG] initAdapterConfig - loading adapter config from collection")
+func setAdapterConfig(client cb.Client) {
+	log.Println("[INFO] setAdapterConfig - Fetching adapter config")
+
 	query := cb.NewQuery()
-	query.EqualTo("adapter_name", "mtacGpioAdapter")
-	results, err := cbClient.GetData(adapterConfigCollID, query)
+	query.EqualTo("adapter_name", deviceName)
+
+	log.Println("[DEBUG] setAdapterConfig - Executing query against table " + adapterConfigCollID)
+	results, err := client.GetData(adapterConfigCollID, query)
 	if err != nil {
-		log.Printf("[ERROR] initAdapterConfig - failed to fetch adapter config: %s\n", err.Error())
-		log.Printf("[INFO] initAdapterConfig - using default adapter config: %+v\n", config)
-	} else {
-		data := results["DATA"].([]interface{})
-		if len(data) == 1 {
-			configData := data[0].(map[string]interface{})
-			log.Printf("[DEBUG] initAdapterConfig - fetched config:\n%+v\n", configData)
-			if configData["topic_root"] != nil {
-				config.TopicRoot = configData["topic_root"].(string)
-			} else {
-				log.Printf("[INFO] initAdapterConfig - topic_root is nil, using default adapter config: %+v\n", config)
-			}
-		} else {
-			log.Printf("[ERROR] initAdapterConfig - unexpected number of matching adapter configs: %d\n", len(data))
-			log.Printf("[INFO] initAdapterConfig - using default adapter config: %+v\n", config)
-		}
+		log.Fatalf("[FATAL] setAdapterConfig - Error fetching adapter config: %s", err.Error())
 	}
-	log.Println("[INFO] initAdapterConfig - adapter config successfully loaded")
+
+	data := results["DATA"].([]interface{})
+
+	if len(data) == 0 {
+		log.Fatalf("[FATAL] - setAdapterConfig - No configuration found for adapter with name: %s", deviceName)
+	}
+
+	config = adapterConfig{TopicRoot: topicRoot}
+
+	configData := data[0].(map[string]interface{})
+	log.Printf("[DEBUG] setAdapterConfig - fetched config:\n%+v\n", data)
+	if configData["topic_root"] != nil {
+		config.TopicRoot = configData["topic_root"].(string)
+	}
+	if configData["adapter_settings"] == nil {
+		log.Fatalln("[FATAL] setAdapterConfig - No adapter settings required, this is required")
+	}
+	var settings adapterSettings
+	if err := json.Unmarshal([]byte(configData["adapter_settings"].(string)), &settings); err != nil {
+		log.Fatalf("[FATAL] setAdapterConfig - Failed to parse adapter_settings: %s", err.Error())
+	}
+
+	config.AdapterSettings = settings
+
+	// if config.AdapterSettings.WatchInputs.IS{
+	// 	log.Fatalln("[FATAL] setAdapterConfig - No messaging URL defined for broker config adapter_settings")
+	// }
+
+	log.Printf("[DEBUG] setAdapterConfig - Using adapter settings:\n%+v\n", config)
 }
 
 func setSerialPortName() {
@@ -263,56 +279,89 @@ func initGPIOValues() {
 	log.Println("[INFO] initGPIOValues - initial gpio values loaded successfully")
 }
 
-func initFileWatchers() {
-	log.Println("[DEBUG] initFileWatchers - creating file watchers for digital outputs")
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		log.Fatalf("[FATAL] initFileWatchers - failed to create file watcher: %s", err.Error())
-	}
-	defer watcher.Close()
-	for _, gpioID := range readOnlyGPIOIDs {
-		currentValues.Mutex.Lock()
-		path := currentValues.Values[gpioID].FilePath
-		currentValues.Mutex.Unlock()
-		log.Printf("[DEBUG] initFileWatchers - adding watcher for file: %s", path)
-		if err := watcher.Add(path); err != nil {
-			log.Fatalf("[FATAL] initFileWatchers - failed to add file watcher: %s", err.Error())
-		}
-	}
-	log.Println("[INFO] initFileWatchers - file watchers successfully created for digital outputs")
-	for {
-		select {
-		case event := <-watcher.Events:
-			timestamp := time.Now().Format(javascriptISOString)
-			log.Printf("[DEBUG] initFileWatchers - event detected: %+v\n", event)
-			if event.Op&fsnotify.Write == fsnotify.Write {
-				log.Printf("[DEBUG] initFileWatchers - modified file: %s\n", event.Name)
-				_, gpioID := filepath.Split(event.Name)
-				currentValues.Mutex.Lock()
-				changedGPIO := currentValues.Values[gpioID]
-				currentValues.Mutex.Unlock()
-				// if this change is from a digital output that is currently cycling, ignore it
-				if changedGPIO.ActiveCycle {
-					log.Println("[DEBUG] initFileWatchers - change was caused from an active cycle, ignoring it")
-					break
-				}
-				oldValue := changedGPIO.Value
-				if err := changedGPIO.readValueFromFile(); err != nil {
-					log.Printf("[ERROR] initFileWatchers - failed to read new value: %s", err.Error())
-					break
-				}
-				newValue := changedGPIO.Value
-				if oldValue != newValue {
-					publishGPIOChange(gpioID, oldValue, newValue, timestamp)
-				} else {
-					log.Println("[DEBUG] initFileWatchers - value didn't actually change, not doing anything")
-				}
-			}
-		case err := <-watcher.Errors:
-			log.Printf("[ERROR] initFileWatchers - unexpected error: %s", err.Error())
-		}
+func initFilePolling() {
+	for x := 0; x < len(config.AdapterSettings.WatchInputs); x++ {
+		go startPolling(config.AdapterSettings.WatchInputs[x])
 	}
 }
+
+func startPolling(gpioID string) {
+	timestamp := time.Now().Format(javascriptISOString)
+	ticker := time.NewTicker(time.Duration(config.AdapterSettings.PollingInterval) * time.Millisecond)
+	for t := range ticker.C {
+		currentValues.Mutex.Lock()
+		changedGPIO := currentValues.Values[gpioID]
+		currentValues.Mutex.Unlock()
+		oldValue := changedGPIO.Value
+		if err := changedGPIO.readValueFromFile(); err != nil {
+			log.Printf("[ERROR] initFilePolling - failed to read new value: %s", err.Error())
+			break
+		}
+		newValue := changedGPIO.Value
+		if oldValue != newValue {
+			log.Println("[INFO] initFilePolling - got a new value tick at ", t)
+			log.Printf("[INFO] new value for %s is %d\n", gpioID, newValue)
+			publishGPIOChange(gpioID, oldValue, newValue, timestamp)
+		} else {
+			//log.Println("[DEBUG] initFilePolling - value didn't actually change, not doing anything at tick ", t)
+		}
+	}
+	defer ticker.Stop()
+}
+
+// func initFileWatchers() {
+// 	log.Println("[DEBUG] initFileWatchers - creating file watchers for digital outputs")
+// 	watcher, err := fsnotify.NewWatcher()
+// 	if err != nil {
+// 		log.Fatalf("[FATAL] initFileWatchers - failed to create file watcher: %s", err.Error())
+// 	}
+// 	defer watcher.Close()
+// 	for _, gpioID := range readOnlyGPIOIDs {
+// 		currentValues.Mutex.Lock()
+// 		path := currentValues.Values[gpioID].FilePath
+// 		currentValues.Mutex.Unlock()
+// 		log.Printf("[DEBUG] initFileWatchers - adding watcher for file: %s", path)
+// 		if err := watcher.Add(path); err != nil {
+// 			log.Fatalf("[FATAL] initFileWatchers - failed to add file watcher: %s", err.Error())
+// 		}
+// 	}
+// 	log.Println("[INFO] initFileWatchers - file watchers successfully created for digital outputs")
+
+// 	for {
+// 		select {
+// 		case event := <-watcher.Events: //blocks until watcher.events returns something
+// 			timestamp := time.Now().Format(javascriptISOString)
+// 			log.Printf("[DEBUG] initFileWatchers - event detected: %+v\n", event)
+
+// 			//poll inputs here
+// 			if event.Op&fsnotify.Write == fsnotify.Write {
+// 				log.Printf("[DEBUG] initFileWatchers - modified file: %s\n", event.Name)
+// 				_, gpioID := filepath.Split(event.Name)
+// 				currentValues.Mutex.Lock()
+// 				changedGPIO := currentValues.Values[gpioID]
+// 				currentValues.Mutex.Unlock()
+// 				// if this change is from a digital output that is currently cycling, ignore it
+// 				if changedGPIO.ActiveCycle {
+// 					log.Println("[DEBUG] initFileWatchers - change was caused from an active cycle, ignoring it")
+// 					break
+// 				}
+// 				oldValue := changedGPIO.Value
+// 				if err := changedGPIO.readValueFromFile(); err != nil {
+// 					log.Printf("[ERROR] initFileWatchers - failed to read new value: %s", err.Error())
+// 					break
+// 				}
+// 				newValue := changedGPIO.Value
+// 				if oldValue != newValue {
+// 					publishGPIOChange(gpioID, oldValue, newValue, timestamp)
+// 				} else {
+// 					log.Println("[DEBUG] initFileWatchers - value didn't actually change, not doing anything")
+// 				}
+// 			}
+// 		case err := <-watcher.Errors:
+// 			log.Printf("[ERROR] initFileWatchers - unexpected error: %s", err.Error())
+// 		}
+// 	}
+// }
 
 func connectClearBlade() {
 	log.Println("[INFO] connectClearBlade - connecting ClearBlade MQTT")
@@ -333,7 +382,8 @@ func onConnect(client mqtt.Client) {
 		log.Println("[INFO] onConnect - retrying subscribe in 30 seconds...")
 		cbSubChannel, err = cbClient.Subscribe(topic, msgSubscribeQOS)
 	}
-	go initFileWatchers()
+	//go initFileWatchers()
+	go initFilePolling()
 	go subscribeWorker(cbSubChannel)
 }
 
@@ -460,7 +510,7 @@ func (g *gpio) writeNewValueToFile(newValue int) error {
 }
 
 func (g *gpio) readValueFromFile() error {
-	log.Printf("[DEBUG] readValueFromFile - reading value for gpio id: %s\n", g.GpioID)
+	//log.Printf("[DEBUG] readValueFromFile - reading value for gpio id: %s\n", g.GpioID)
 	rawString, err := g.getRawStringValueFromFile()
 	if err != nil {
 		return err
@@ -470,12 +520,12 @@ func (g *gpio) readValueFromFile() error {
 		log.Printf("[ERROR] Failed to convert value to int for gpio %s: %s\n", g.GpioID, err.Error())
 		return err
 	}
-	log.Printf("[INFO] readValueFromFile - read value %d from gpio id: %s\n", g.Value, g.GpioID)
+	//log.Printf("[INFO] readValueFromFile - read value %d from gpio id: %s\n", g.Value, g.GpioID)
 	return nil
 }
 
 func (g *gpio) getRawStringValueFromFile() (string, error) {
-	log.Printf("[DEBUG] getRawStringValueFromFile - reading value for gpio id: %s\n", g.GpioID)
+	//log.Printf("[DEBUG] getRawStringValueFromFile - reading value for gpio id: %s\n", g.GpioID)
 	g.File.Seek(0, 0)
 	b, err := ioutil.ReadAll(g.File)
 	if err != nil {
@@ -483,7 +533,7 @@ func (g *gpio) getRawStringValueFromFile() (string, error) {
 		return "", err
 	}
 	stringValue := strings.TrimRight(string(b), "\n")
-	log.Printf("[INFO] getRawStringValueFromFile - read value %s from gpio id: %s\n", stringValue, g.GpioID)
+	//log.Printf("[INFO] getRawStringValueFromFile - read value %s from gpio id: %s\n", stringValue, g.GpioID)
 	return stringValue, nil
 }
 

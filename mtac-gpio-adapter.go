@@ -393,8 +393,8 @@ func connectClearBlade() {
 func onConnect(client mqtt.Client) {
 	//10Dec2020: post to topic_root/feedback
 	var feedbackMsg = "onConnect - ClearBlade MQTT successfully connected"
-	log.Println(fmt.Sprintf("[INFO] %s", feedbackMsg)
-	feedbackTopic := fmt.Sprintf("%s/error", config.TopicRoot)
+	log.Println(fmt.Sprintf("[INFO] %s", feedbackMsg))
+	feedbackTopic := fmt.Sprintf("%s/feedback", config.TopicRoot)
 	cbClient.Publish(feedbackTopic, []byte(feedbackMsg), msgPublishQOS)
 
 	var cbSubChannel <-chan *mqttTypes.Publish

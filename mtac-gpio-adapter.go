@@ -154,16 +154,27 @@ func main() {
 func initClearBlade() {
 	log.Println("[DEBUG] initClearBlade - initializing clearblade")
 	cbClient = cb.NewDeviceClientWithAddrs(platformURL, messagingURL, sysKey, sysSec, deviceName, activeKey)
-	for err := cbClient.Authenticate(); err != nil; {
+	log.Println("[INFO] initClearBlade - Trying again every 2 seconds...")
+	for err := authClearBladeClient(cbClient); err != nil; {
 		log.Printf("[ERROR] initClearBlade - Error authenticating %s: %s\n", deviceName, err.Error())
-		log.Println("[INFO] initClearBlade - Trying again in 1 minute...")
-		time.Sleep(time.Minute * 1)
-		err = cbClient.Authenticate()
+		time.Sleep(time.Second * 2)
+		err = authClearBladeClient(cbClient)
+	}
+	//log.Println("[INFO] initClearBlade - clearblade successfully initialized")
+
+	//setAdapterConfig(cbClient)
+
+}
+
+func authClearBladeClient(client cb.Client) error {
+	if _, err := cbClient.Authenticate(); err != nil {
+		log.Printf("[ERROR] initOtherCbClient - Error authenticating ClearBlade: %s\n", err.Error())
+		return err
 	}
 	log.Println("[INFO] initClearBlade - clearblade successfully initialized")
-
+	//TODO: post to topic_root/feedback
 	setAdapterConfig(cbClient)
-
+	return nil
 }
 
 func setAdapterConfig(client cb.Client) {
@@ -295,6 +306,7 @@ func startPolling(gpioID string) {
 		oldValue := changedGPIO.Value
 		if err := changedGPIO.readValueFromFile(); err != nil {
 			log.Printf("[ERROR] initFilePolling - failed to read new value: %s", err.Error())
+			//TODO: post to topic_root/error
 			break
 		}
 		newValue := changedGPIO.Value
@@ -373,6 +385,7 @@ func connectClearBlade() {
 
 func onConnect(client mqtt.Client) {
 	log.Println("[INFO] onConnect - ClearBlade MQTT successfully connected")
+	//TODO: post to topic_root/feedback
 	var cbSubChannel <-chan *mqttTypes.Publish
 	var err error
 	topic := strings.Replace(requestMQTTTopic, "<topic_root>", config.TopicRoot, 1)
@@ -380,6 +393,7 @@ func onConnect(client mqtt.Client) {
 	for cbSubChannel, err = cbClient.Subscribe(topic, msgSubscribeQOS); err != nil; {
 		log.Printf("[ERROR] onConnect - Failed to subscribe to MQTT topic: %s\n", err.Error())
 		log.Println("[INFO] onConnect - retrying subscribe in 30 seconds...")
+		//TODO: post to topic_root/error
 		cbSubChannel, err = cbClient.Subscribe(topic, msgSubscribeQOS)
 	}
 	//go initFileWatchers()
@@ -389,6 +403,7 @@ func onConnect(client mqtt.Client) {
 
 func onConnectLost(client mqtt.Client, connerr error) {
 	log.Printf("[ERROR] onConnectLost - ClearBlade MQTT lost connection: %s", connerr.Error())
+	//TODO: post to topic_root/error
 	// reconnect logic should be handled by go/paho sdk under the covers
 }
 
@@ -418,6 +433,7 @@ func subscribeWorker(onPubChannel <-chan *mqttTypes.Publish) {
 						log.Printf("[DEBUG] subscribeWorker - processing gpio write request: %+v\n", requestMsg)
 						if err := theGPIO.writeNewValueToFile(requestMsg.Value); err != nil {
 							log.Printf("[ERROR] subscribeWorker - failed to write gpio change: %s", err.Error())
+							//TODO: post to topic_root/error
 						}
 						break
 					case "start_cycle":

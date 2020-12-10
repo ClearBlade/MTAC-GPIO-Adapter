@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -171,8 +172,11 @@ func authClearBladeClient(client cb.Client) error {
 		log.Printf("[ERROR] initOtherCbClient - Error authenticating ClearBlade: %s\n", err.Error())
 		return err
 	}
-	log.Println("[INFO] initClearBlade - clearblade successfully initialized")
-	//TODO: post to topic_root/feedback
+	//10Dec2020: post to topic_root/feedback
+	var feedbackMsg = "initClearBlade - clearblade successfully initialized"
+	topic := fmt.Sprintf("%s/feedback", config.TopicRoot)
+	log.Println(fmt.Sprintf("[INFO] %s", feedbackMsg))
+	cbClient.Publish(topic, []byte(feedbackMsg), msgPublishQOS)
 	setAdapterConfig(cbClient)
 	return nil
 }
@@ -305,8 +309,11 @@ func startPolling(gpioID string) {
 		currentValues.Mutex.Unlock()
 		oldValue := changedGPIO.Value
 		if err := changedGPIO.readValueFromFile(); err != nil {
-			log.Printf("[ERROR] initFilePolling - failed to read new value: %s", err.Error())
-			//TODO: post to topic_root/error
+			//10Dec2020: post to topic_root/error
+			var errorMsg = fmt.Sprintf("initFilePolling - failed to read new value: %s", err.Error())
+			log.Printf("[ERROR] %s", errorMsg)
+			topic := fmt.Sprintf("%s/error", config.TopicRoot)
+			cbClient.Publish(topic, []byte(errorMsg), msgPublishQOS)
 			break
 		}
 		newValue := changedGPIO.Value
@@ -384,16 +391,24 @@ func connectClearBlade() {
 }
 
 func onConnect(client mqtt.Client) {
-	log.Println("[INFO] onConnect - ClearBlade MQTT successfully connected")
-	//TODO: post to topic_root/feedback
+	//10Dec2020: post to topic_root/feedback
+	var feedbackMsg = "onConnect - ClearBlade MQTT successfully connected"
+	log.Println(fmt.Sprintf("[INFO] %s", feedbackMsg)
+	feedbackTopic := fmt.Sprintf("%s/error", config.TopicRoot)
+	cbClient.Publish(feedbackTopic, []byte(feedbackMsg), msgPublishQOS)
+
 	var cbSubChannel <-chan *mqttTypes.Publish
 	var err error
 	topic := strings.Replace(requestMQTTTopic, "<topic_root>", config.TopicRoot, 1)
 	topic = strings.Replace(topic, "<gpio_id>", "+", 1)
 	for cbSubChannel, err = cbClient.Subscribe(topic, msgSubscribeQOS); err != nil; {
-		log.Printf("[ERROR] onConnect - Failed to subscribe to MQTT topic: %s\n", err.Error())
+		//10Dec2020: post to topic_root/error
+		var errorMsg = fmt.Sprintf("onConnect - Failed to subscribe to MQTT topic: %s\n", err.Error())
+		log.Printf("[ERROR] %s", errorMsg)
+		errorTopic := fmt.Sprintf("%s/error", config.TopicRoot)
+		cbClient.Publish(errorTopic, []byte(errorMsg), msgPublishQOS)
+
 		log.Println("[INFO] onConnect - retrying subscribe in 30 seconds...")
-		//TODO: post to topic_root/error
 		cbSubChannel, err = cbClient.Subscribe(topic, msgSubscribeQOS)
 	}
 	//go initFileWatchers()
@@ -402,8 +417,12 @@ func onConnect(client mqtt.Client) {
 }
 
 func onConnectLost(client mqtt.Client, connerr error) {
-	log.Printf("[ERROR] onConnectLost - ClearBlade MQTT lost connection: %s", connerr.Error())
-	//TODO: post to topic_root/error
+	//10Dec2020: post to topic_root/error
+	var errorMsg = fmt.Sprintf("onConnectLost - ClearBlade MQTT lost connection: %s", connerr.Error())
+	log.Printf("[ERROR] %s", errorMsg)
+	errorTopic := fmt.Sprintf("%s/error", config.TopicRoot)
+	cbClient.Publish(errorTopic, []byte(errorMsg), msgPublishQOS)
+
 	// reconnect logic should be handled by go/paho sdk under the covers
 }
 
@@ -432,8 +451,11 @@ func subscribeWorker(onPubChannel <-chan *mqttTypes.Publish) {
 					case "write":
 						log.Printf("[DEBUG] subscribeWorker - processing gpio write request: %+v\n", requestMsg)
 						if err := theGPIO.writeNewValueToFile(requestMsg.Value); err != nil {
-							log.Printf("[ERROR] subscribeWorker - failed to write gpio change: %s", err.Error())
-							//TODO: post to topic_root/error
+							//10Dec2020: post to topic_root/error
+							var errorMsg = fmt.Sprintf("subscribeWorker - failed to write gpio change: %s", err.Error())
+							log.Printf("[ERROR] %s", errorMsg)
+							errorTopic := fmt.Sprintf("%s/error", config.TopicRoot)
+							cbClient.Publish(errorTopic, []byte(errorMsg), msgPublishQOS)
 						}
 						break
 					case "start_cycle":
